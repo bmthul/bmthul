@@ -4,8 +4,8 @@ import rp2
 from time import sleep
 from machine import Pin,PWM, RTC
 
-ssid = 'avm7360'
-password = '7955743501919411thul'
+ssid = 'ssid'
+password = 'passwd'
 
 website = """<!DOCTYPE html>
 <html>
