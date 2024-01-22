@@ -1,0 +1,124 @@
+import umail
+import network
+import time
+import machine
+import sys
+import time
+import usocket as socket
+import ustruct as struct
+from time import sleep
+from dht import DHT22
+from machine import Pin
+
+# Your email details bei Google anlegen
+sender_email = 'maxmustermann@gmail.com‘
+sender_name = 'RaspberryPiPico'
+sender_app_password = 'passowrt von Google'
+recipient_email =Empfänger Mail
+email_subject ='Email from RPi Pico'
+
+# Your network credentials
+ssid = 'Wlan Name'
+password = 'Wlan Passwort'
+
+# Initialisierung GPIO und DHT22
+sleep(1)
+dht22_sensor = DHT22(Pin(27, Pin.IN, Pin.PULL_UP))
+
+# NTP-Host
+NTP_HOST = 'pool.ntp.org'
+# Winterzeit / Sommerzeit
+GMT_OFFSET = 3600 * 1 # 3600 = 1 h (Winterzeit)
+#GMT_OFFSET = 3600 * 2 # 3600 = 1 h (Sommerzeit)
+
+#Connect to Wi-Fi
+wlan = network.WLAN(network.STA_IF)
+wlan.active(True)
+wlan.connect(ssid, password)
+
+# Wait for connection to establish
+max_wait = 10
+while max_wait > 0:
+    if wlan.status() < 0 or wlan.status() >= 3:
+            break
+    max_wait -= 1
+    print('waiting for connection...')
+    time.sleep(1)
+    
+# Manage connection errors
+if wlan.status() != 3:
+    raise RuntimeError('Network Connection has failed')
+else:
+    print('connected')
+    
+# Funktion: Zeit per NTP holen
+def getTimeNTP():
+    NTP_DELTA = 2208988800
+    NTP_QUERY = bytearray(48)
+    NTP_QUERY[0] = 0x1B
+    addr = socket.getaddrinfo(NTP_HOST, 123)[0][-1]
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.settimeout(1)
+        res = s.sendto(NTP_QUERY, addr)
+        msg = s.recv(48)
+    finally:
+        s.close()
+    ntp_time = struct.unpack("!I", msg[40:44])[0]
+    return time.gmtime(ntp_time - NTP_DELTA + GMT_OFFSET)
+
+# Funktion: RTC-Zeit setzen
+def setTimeRTC():
+# NTP-Zeit holen
+    tm = getTimeNTP()
+    machine.RTC().datetime((tm[0], tm[1], tm[2], tm[6], tm[3], tm[4], tm[5], 0))
+    
+    
+# Zeit setzen
+setTimeRTC()
+datetime = machine.RTC().datetime()
+mailtext=str('Aktuelle Uhrzeit: %02d:%02d' % (datetime[4], datetime[5]))
+
+# Send email once after MCU boots up
+def mailersend():
+    smtp = umail.SMTP('smtp.gmail.com', 465, ssl=True)
+    smtp.login(sender_email, sender_app_password)
+    smtp.to(recipient_email)
+    smtp.write("From:" + sender_name + "<"+ sender_email+">\n")
+    smtp.write("Subject:" + email_subject + "\n")
+    smtp.write(mailtext)
+    smtp.send()
+    smtp.quit()
+    
+i = 1
+while i < 2:
+  print(i)
+  print(mailtext)
+  mailersend()
+  sleep(2)
+  setTimeRTC()
+  datetime = machine.RTC().datetime()
+  mailtext=str('Aktuelle Uhrzeit: %02d:%02d' % (datetime[4], datetime[5])) 
+  i += 1
+
+
+#datetime = machine.RTC().datetime()
+print('Aktuelle Uhrzeit: %02d:%02d' % (datetime[4], datetime[5]))
+while True:
+    # Messung durchführen
+    dht22_sensor.measure()
+    # Werte lesen
+    temp = dht22_sensor.temperature()
+    humi = dht22_sensor.humidity()
+    # Werte ausgeben
+    print('      Temperatur:', temp, '°C')
+    print('Luftfeuchtigkeit:', humi, '%')
+    # + str(temp) + ' Feuchte : ' + str(humi) + ' ' + 'Aktuelle Uhrzeit: ' + str(datetime[4]) + ':' +  str(datetime[5])
+    mailtext=str(temp)
+    print(mailtext)
+    if temp > 20:
+       mailersend()
+    else:
+       mailtext=str('Aktuelle Uhrzeit: %02d:%02d' % (datetime[4], datetime[5]))
+       mailersend()
+    sleep(600)
